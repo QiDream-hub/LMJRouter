@@ -1,0 +1,3 @@
+[submodule "thirdparty/LMJCore"]
+	path = thirdparty/LMJCore
+	url = git@github.com:QiDream-hub/LMJCore.git
