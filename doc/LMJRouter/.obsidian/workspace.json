@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "事务详细流程.md",
+                "file": "LMJRouter分区策略设计总结.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "事务详细流程"
+              "title": "LMJRouter分区策略设计总结"
             }
           }
         ],
@@ -198,7 +198,7 @@
       "bases:创建新数据库": false
     }
   },
-  "active": "f2c2ddc3a09366cc",
+  "active": "5290bc04d8fd1c99",
   "lastOpenFiles": [
     "LMJRouter 事务与实例选择设计思路总述.md",
     "事务详细流程.md",
