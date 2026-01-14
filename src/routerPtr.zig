@@ -1,6 +1,6 @@
-const lmjcore = @import("lmjcore");
+const lmj = @import("lmjcore");
 
-pub const RouterPtrLen = lmjcore.PtrLen;
+pub const RouterPtrLen = lmj.PtrLen;
 pub const RouterInstanceIdLen = 2;
 
 pub const RouterPtr = packed struct {
@@ -14,10 +14,10 @@ comptime {
         @compileError("RouterPtr size mismatch with LMJCore pointer length");
 }
 
-pub fn asRouter(ptr: *const lmjcore.Ptr) *const RouterPtr {
+pub fn asRouter(ptr: *const lmj.Ptr) *const RouterPtr {
     return @ptrCast(ptr);
 }
 
-pub fn asCore(ptr: *const RouterPtr) *const lmjcore.Ptr {
+pub fn asCore(ptr: *const RouterPtr) *const lmj.Ptr {
     return @ptrCast(ptr);
 }
