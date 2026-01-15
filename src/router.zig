@@ -1,14 +1,12 @@
 const std = @import("std");
 const lmj = @import("lmjcore");
-const RouterPtr = @import("routerPtr.zig").RouterPtr;
+const RouterPtr = @import("routerPtr.zig");
 const errors = @import("error.zig").errors;
 
 pub var allocator = std.heap.c_allocator;
 
-pub const router = @This();
-
 pub const InstanceId = u16;
-pub const InstanceIdLen = @sizeOf(router.InstanceId);
+pub const InstanceIdLen = @sizeOf(InstanceId);
 
 const MAX_INSTANCES = 1 << @sizeOf(InstanceId) * 8;
 
@@ -20,28 +18,56 @@ pub const lmjcoreConfig = struct {
     ptrGenCtx: ?*anyopaque,
 };
 
-const ManagedReadTxn = struct {
+pub const ManagedReadTxn = struct {
     txn: *lmj.Txn,
     ref_count: std.atomic.Value(usize),
     is_stale: std.atomic.Value(bool),
+
+    pub fn init(self: *ManagedReadTxn, evn: *lmj.Env) !void {
+        self.ref_count = std.atomic.Value(usize).init(0);
+        self.is_stale = std.atomic.Value(bool).init(false);
+
+        var readTxn_raw: ?*lmj.Txn = null;
+        try lmj.txnBegin(evn, .readonly, &readTxn_raw);
+        const readTxn = readTxn_raw.?;
+
+        errdefer {
+            lmj.txnAbort(readTxn);
+        }
+        self.txn = readTxn;
+    }
+
+    pub fn clean(self: *ManagedReadTxn) !void {
+        if (self.is_stale.load(.seq_cst) and self.ref_count.load(.seq_cst) == 0) {
+            lmj.txnAbort(self.txn);
+        }
+    }
 };
 
-const InstanceConfig = struct {
+pub const InstanceConfig = struct {
     instanceId: InstanceId,
     lmjcoreConfig: lmjcoreConfig,
-    managedReadTxn: ManagedReadTxn,
+    managedReadTxn: *ManagedReadTxn,
     evn: *lmj.Env,
 };
 
 pub const RouterConfig = struct {
     instances: [MAX_INSTANCES]?*InstanceConfig,
 
-    pub fn matches(self: InstanceConfig, ptr: RouterPtr) bool {
-        return self.instanceId == ptr.instance_id;
+    pub fn matches(self: InstanceConfig, ptr: *const RouterPtr) bool {
+        return self.instanceId == ptr.getInstanceId();
     }
 
-    pub fn getInstance(self: RouterConfig, ptr: RouterPtr) !*InstanceConfig {
-        const instances = self.instances[ptr.instance_id];
+    pub fn getInstance(self: RouterConfig, ptr: *const RouterPtr) !*InstanceConfig {
+        const instances = self.instances[ptr.getInstanceId()];
+        if (instances == null) {
+            return errors.InstanceNotFound;
+        }
+        return instances.?;
+    }
+
+    pub fn getInstanceById(self: RouterConfig, ptr: InstanceId) !*InstanceConfig {
+        const instances = self.instances[ptr];
         if (instances == null) {
             return errors.InstanceNotFound;
         }
@@ -58,25 +84,19 @@ pub const RouterConfig = struct {
         try lmj.init(config.path, config.mapSize, config.flags, config.ptrGen, config.ptrGenCtx, &env_raw);
         const env = env_raw.?;
 
-        var readTxn_raw: ?*lmj.Txn = null;
-        try lmj.txnBegin(env, .readonly, &readTxn_raw);
-        const readTxn = readTxn_raw.?;
-
         const instance_ptr = try allocator.create(InstanceConfig);
+        const managedReadTxn = try allocator.create(ManagedReadTxn);
+        try managedReadTxn.init(env);
         errdefer {
             _ = allocator.destroy(instance_ptr);
-            lmj.txnAbort(readTxn);
+            _ = allocator.destroy(managedReadTxn);
             lmj.cleanup(env);
         }
 
         instance_ptr.* = .{
             .instanceId = id,
             .lmjcoreConfig = config,
-            .managedReadTxn = .{
-                .txn = readTxn,
-                .ref_count = std.atomic.Value(usize).init(0),
-                .is_stale = std.atomic.Value(bool).init(false),
-            },
+            .managedReadTxn = managedReadTxn,
             .evn = env,
         };
 
@@ -90,28 +110,28 @@ pub const RouterConfig = struct {
             return errors.InstanceNotFound;
         }
 
-        const instance = instance_opt.?;
+        const instance = instance_opt.?; // 不可变引用，避免悬空
 
-        // 检查是否有活跃引用（可选安全检查）
+        // 检查是否有活跃引用（安全检查）
         const ref_count = instance.managedReadTxn.ref_count.load(.seq_cst);
         if (ref_count != 0) {
             std.log.err("Cannot unregister instance {}: {} active read transactions", .{ id, ref_count });
             return errors.InstanceInUse;
         }
 
-        // 1. abort the read transaction (lmdb read txn can be aborted or committed; abort is safe)
+        // 1. Abort the managed read transaction
         lmj.txnAbort(instance.managedReadTxn.txn);
 
-        // 2. close the environment
+        // 2. Close the LMDB environment
         lmj.cleanup(instance.evn);
 
-        // 3. deinit the owned config (frees path)
-        instance.lmjcoreConfig.deinit(allocator);
+        // 3. Destroy the ManagedReadTxn struct (allocated separately)
+        allocator.destroy(instance.managedReadTxn);
 
-        // 4. destroy the instance struct
+        // 4. Destroy the InstanceConfig itself
         allocator.destroy(instance);
 
-        // 5. clear the slot
+        // 5. Clear the slot in the instances array
         self.instances[id] = null;
 
         std.log.info("Instance {} successfully unregistered", .{id});
