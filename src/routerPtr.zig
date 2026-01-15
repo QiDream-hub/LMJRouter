@@ -1,12 +1,13 @@
 const lmj = @import("lmjcore");
+const router = @import("router.zig");
 
 pub const RouterPtrLen = lmj.PtrLen;
-pub const RouterInstanceIdLen = 2;
+pub const RouterInstanceIdLen = @sizeOf(router.InstanceId);
 
 pub const RouterPtr = packed struct {
     entityType: u8,
-    instance_id: u16,
-    unique_part: [RouterPtrLen - RouterInstanceIdLen - 1]u8,
+    instance_id: router.InstanceId,
+    unique_part: [RouterPtrLen - RouterInstanceIdLen - @sizeOf(u8)]u8,
 };
 
 comptime {

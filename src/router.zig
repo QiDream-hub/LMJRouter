@@ -8,29 +8,16 @@ pub var allocator = std.heap.c_allocator;
 pub const router = @This();
 
 pub const InstanceId = u16;
-const MAX_INSTANCES = 1 << @sizeOf(InstanceId); // 65536
+pub const InstanceIdLen = @sizeOf(router.InstanceId);
+
+const MAX_INSTANCES = 1 << @sizeOf(InstanceId) * 8;
 
 pub const lmjcoreConfig = struct {
     path: []const u8,
     mapSize: usize,
     flags: u32,
-    ptrGen: ?lmj.PtrGeneratorFn,
+    ptrGen: lmj.PtrGeneratorFn,
     ptrGenCtx: ?*anyopaque,
-
-    pub fn clone(self: lmjcoreConfig, alloc: std.mem.Allocator) !lmjcoreConfig {
-        const new_path = try alloc.dupe(u8, self.path);
-        return .{
-            .path = new_path,
-            .mapSize = self.mapSize,
-            .flags = self.flags,
-            .ptrGen = self.ptrGen,
-            .ptrGenCtx = self.ptrGenCtx,
-        };
-    }
-
-    pub fn deinit(self: *lmjcoreConfig, alloc: std.mem.Allocator) void {
-        alloc.free(self.path);
-    }
 };
 
 const ManagedReadTxn = struct {
@@ -61,18 +48,14 @@ pub const RouterConfig = struct {
         return instances.?;
     }
 
-    pub fn registerInstance(self: *RouterConfig, config: *const lmjcoreConfig, id: InstanceId) errors!void {
+    pub fn registerInstance(self: *RouterConfig, config: lmjcoreConfig, id: InstanceId) errors!void {
         if (self.instances[id]) |existing| {
             std.log.err("Instance ID {} already registered (path: {s})", .{ id, existing.lmjcoreConfig.path });
             return errors.InstanceIdAlreadyUsed;
         }
 
-        // 克隆配置（关键：复制 path）
-        var owned_config = try config.clone(allocator);
-        errdefer owned_config.deinit(allocator);
-
         var env_raw: ?*lmj.Env = null;
-        try lmj.init(owned_config.path, owned_config.mapSize, owned_config.flags, owned_config.ptrGen, owned_config.ptrGenCtx, &env_raw);
+        try lmj.init(config.path, config.mapSize, config.flags, config.ptrGen, config.ptrGenCtx, &env_raw);
         const env = env_raw.?;
 
         var readTxn_raw: ?*lmj.Txn = null;
@@ -84,12 +67,11 @@ pub const RouterConfig = struct {
             _ = allocator.destroy(instance_ptr);
             lmj.txnAbort(readTxn);
             lmj.cleanup(env);
-            owned_config.deinit(allocator);
         }
 
         instance_ptr.* = .{
             .instanceId = id,
-            .lmjcoreConfig = owned_config,
+            .lmjcoreConfig = config,
             .managedReadTxn = .{
                 .txn = readTxn,
                 .ref_count = std.atomic.Value(usize).init(0),

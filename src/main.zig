@@ -2,6 +2,7 @@ const std = @import("std");
 const lmj = @import("lmjcore");
 const router = @import("router.zig");
 const tran = @import("transaction.zig");
+const RouterPtr = @import("routerPtr.zig").RouterPtr;
 
 fn zig_uuidv4_generator(id: ?*anyopaque, out: [*c]u8) callconv(.c) c_int {
     const out_slice = out[0..17];
@@ -37,5 +38,18 @@ pub fn main() !void {
         .ptrGen = zig_uuidv4_generator,
         .ptrGenCtx = &id,
     };
-    try router.routerConfig.registerInstance(&config, id);
+    try router.routerConfig.registerInstance(config, id);
+
+    var txn: tran.writeTxn = null;
+    try tran.txnBegin(332, &txn);
+
+    var ptr: RouterPtr = undefined;
+    try tran.objCreate(txn, &ptr);
+
+    try tran.objMemberPut(txn, ptr, "name", "梨花");
+
+    var buff: [10]u8 = undefined;
+    const result = try tran.objMemberGet(ptr, "name", &buff);
+    const resultBuff = buff[0..10];
+    std.log.debug("%s", .{resultBuff[0..result]});
 }
