@@ -8,35 +8,20 @@
         "type": "tabs",
         "children": [
           {
-            "id": "78fec9117be9b512",
+            "id": "f020d9508dc61ea7",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "LMJRouter分区策略设计总结.md",
+                "file": "LMJRouter 多实例路由层设计概要.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "LMJRouter分区策略设计总结"
-            }
-          },
-          {
-            "id": "f2c2ddc3a09366cc",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "LMJRouter分区策略设计总结.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "LMJRouter分区策略设计总结"
+              "title": "LMJRouter 多实例路由层设计概要"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -189,20 +174,20 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "bases:新建数据库": false,
       "switcher:打开快速切换": false,
       "graph:查看关系图谱": false,
       "canvas:新建白板": false,
       "daily-notes:打开/创建今天的日记": false,
       "templates:插入模板": false,
-      "command-palette:打开命令面板": false,
-      "bases:创建新数据库": false
+      "command-palette:打开命令面板": false
     }
   },
-  "active": "5290bc04d8fd1c99",
+  "active": "f020d9508dc61ea7",
   "lastOpenFiles": [
-    "LMJRouter 事务与实例选择设计思路总述.md",
-    "事务详细流程.md",
+    "LMJRouter 多实例路由层设计概要.md",
     "LMJRouter分区策略设计总结.md",
+    "事务详细流程.md",
     "未命名",
     "待讨论.md",
     "欢迎.md",
