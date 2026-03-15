@@ -1,8 +1,5 @@
 const std = @import("std");
 const lmj = @import("lmjcore");
-const router = @import("router.zig");
-const tran = @import("transaction.zig");
-const RouterPtr = @import("routerPtr.zig");
 
 fn zig_uuidv4_generator(id: ?*anyopaque, out: [*c]u8) callconv(.c) c_int {
     const out_slice = out[0..17];
@@ -29,29 +26,4 @@ fn zig_uuidv4_generator(id: ?*anyopaque, out: [*c]u8) callconv(.c) c_int {
     return 0;
 }
 
-pub fn main() !void {
-    var id: u16 = 332;
-    const config: router.lmjcoreConfig = .{
-        .flags = 0,
-        .mapSize = 1024 * 100,
-        .path = "./lmjcore_db",
-        .ptrGen = zig_uuidv4_generator,
-        .ptrGenCtx = &id,
-    };
-    try router.routerConfig.registerInstance(config, id);
-
-    var txn: tran.Txn = undefined;
-    try txn.txnBegin(332);
-
-    var ptr: RouterPtr = undefined;
-    try tran.objCreate(&txn, &ptr);
-
-    try tran.objMemberPut(&txn, &ptr, "name", "梨花");
-
-    try txn.txnCommit();
-
-    var buff: [10]u8 align(@sizeOf(usize)) = undefined;
-    const result = try tran.objMemberGet(&ptr, "name", &buff);
-    const resultBuff = buff[0..10];
-    std.log.debug("{s}", .{resultBuff[0..result]});
-}
+pub fn main() !void {}
