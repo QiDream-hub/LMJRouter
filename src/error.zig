@@ -7,6 +7,9 @@ pub const errors = lmj.Error || error{
     // 实例正在使用
     InstanceInUse,
 
+    // 初始化错误
+    InitFailed,
+
     // 指针类型错误
     PtrTypeError,
 

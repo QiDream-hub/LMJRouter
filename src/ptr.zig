@@ -7,7 +7,11 @@ pub const EntityType = lmj.EntityType;
 
 pub const UniqueId = [lmj.PtrLen - 1 - @sizeOf(InstanceId)]u8;
 
-pub const MAX_INSTANCE_ID: usize = 2 ** @bitSizeOf(InstanceId);
+pub const MAX_INSTANCE_ID: usize = std.math.pow(usize, 2, @bitSizeOf(InstanceId));
+
+pub const RANDOM_ID_OFFSET: usize = @sizeOf(EntityType) + @sizeOf(InstanceId);
+
+pub const RANDOM_ID_LEN: usize = lmj.PtrLen - RANDOM_ID_OFFSET;
 
 // Router 层的语义化指针
 pub const Pointer = struct {

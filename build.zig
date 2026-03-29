@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) !void {
     const lmjcore_module = lmjcre_dep.module("lmjcore");
 
     const exe = b.addExecutable(.{ .name = "LMJRouter", .root_module = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("main.zig"),
         .target = target,
         .optimize = optimize,
     }) });
