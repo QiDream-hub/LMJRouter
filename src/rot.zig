@@ -7,102 +7,107 @@ pub const Instance = ?*lmj.Env;
 
 fn ptrGenerator(ctx: ?*anyopaque, out: [*c]u8) callconv(.c) c_int {
     const instance_id_ptr: *const ptr.InstanceId = @ptrCast(@alignCast(ctx));
-
     std.crypto.random.bytes(out[ptr.RANDOM_ID_OFFSET..][0..ptr.RANDOM_ID_LEN]);
-
     @memcpy(out[1 .. 1 + @sizeOf(ptr.InstanceId)], instance_id_ptr[0..1]);
-
     return 0;
 }
 
-// 使用 StaticBitSet，性能极高
-// u8 -> 32 bytes, u16 -> 8KB
 const BitSet = std.StaticBitSet(ptr.MAX_INSTANCE_ID);
 
 var global_state: struct {
     mutex: std.Thread.Mutex = .{},
     instances: [ptr.MAX_INSTANCE_ID]Instance = std.mem.zeroes([ptr.MAX_INSTANCE_ID]Instance),
-    // 位图含义：
-    // 0 = 完全空闲
-    // 1 = 已注册 或 正在初始化中
+
+    // 【变更 1】初始化为全 0
+    // 0 = 锁定 (默认状态)
+    // 1 = 已打开/空闲
     used_bitmap: BitSet = BitSet.initEmpty(),
 } = .{};
 
-/// 1. 获取空闲 ID (极快，O(1))
+/// 1. 获取一个可用的实例 ID
+/// 直接查找第一个为 1 的位
 pub fn acquireFreeInstanceId() !ptr.InstanceId {
     global_state.mutex.lock();
     defer global_state.mutex.unlock();
 
-    if (global_state.used_bitmap.count() >= ptr.MAX_INSTANCE_ID) {
-        return errors.InstanceNotFound;
-    }
-
-    // 处理可能的 null 情况
+    // 找到第一个值为 1 的位 (即：已打开的实例)
     if (global_state.used_bitmap.findFirstSet()) |index| {
         return @intCast(index);
     } else {
-        // 虽然理论上不会到这里，但为了安全
-        return errors.InstanceNotFound;
+        return errors.NoFreeInstanceId;
     }
 }
 
-/// 2. 打开实例 (修正版)
+/// 2. 打开实例
 pub fn openInstance(instance_id: *const ptr.InstanceId, path: []const u8, map_size: usize) !void {
-    // --- 阶段一：预占位 ---
     global_state.mutex.lock();
 
+    // 检查是否重复打开
     if (global_state.instances[instance_id.*] != null) {
         global_state.mutex.unlock();
         return errors.InstanceIdAlreadyUsed;
     }
 
-    if (global_state.used_bitmap.isSet(instance_id.*)) {
-        global_state.mutex.unlock();
-        return errors.InstanceIdAlreadyUsed;
-    }
-
-    // 标记为“正在使用”
+    // 【变更 2】：预占位
+    // 在“0 默认”策略下，我们需要将状态从 0 -> 1
     global_state.used_bitmap.set(instance_id.*);
 
-    // 释放锁，进行耗时操作
     global_state.mutex.unlock();
 
     // --- 阶段二：执行耗时 IO ---
     var instance: Instance = null;
-
-    // 直接使用 try。如果失败，函数直接返回错误，不会执行后续代码。
-    // 不需要接收返回值 rc。
     try lmj.init(path, map_size, .{ .nosubdir = true }, ptrGenerator, @ptrCast(@constCast(instance_id)), &instance);
 
     // --- 阶段三：提交结果 ---
     global_state.mutex.lock();
     defer global_state.mutex.unlock();
 
-    // 如果代码能执行到这里，说明 lmj.init 成功了。
-    // 我们不需要检查 rc，只需要检查 instance 指针是否有效（防御性编程）。
     if (instance == null) {
-        // 理论上 try lmj.init 成功则 instance 不应为 null，除非 lmj.init 逻辑有漏洞
+        // 初始化失败，回滚：1 -> 0
         global_state.used_bitmap.unset(instance_id.*);
         return errors.InitFailed;
     }
 
-    // 成功：写入指针
+    // 成功：写入指针 (位图保持 1，表示已打开)
     global_state.instances[instance_id.*] = instance;
+    // 注意：这里不需要修改位图，因为它已经是 1 了
 }
 
-/// 3. 路由查询 (高性能)
-pub fn route(id: ptr.InstanceId) !Instance {
-    // 读操作也需要锁，保证看到一致的内存视图
-    // 但由于 openInstance 的 IO 阶段不持锁，这里几乎不会发生等待
+/// 3. 尝试获取事务锁 (逻辑反转)
+/// 现在：0 = 锁定, 1 = 空闲
+pub fn tryMarkAsUsed(instance_id: ptr.InstanceId) bool {
     global_state.mutex.lock();
     defer global_state.mutex.unlock();
 
-    // 即使位图是 1，如果 init 失败，指针依然是 null
-    // 所以必须检查指针，不能只检查位图
+    // 如果位图是 0，说明它处于锁定状态（初始化中或事务中）
+    if (!global_state.used_bitmap.isSet(instance_id)) {
+        return false;
+    }
+
+    // 将其标记为 0 (锁定)
+    global_state.used_bitmap.unset(instance_id);
+    return true;
+}
+
+/// 4. 释放事务锁
+pub fn releaseInstanceLock(instance_id: ptr.InstanceId) void {
+    global_state.mutex.lock();
+    defer global_state.mutex.unlock();
+
+    // 只有当它是已打开状态时才释放
+    // 将其标记为 1 (空闲)
+    global_state.used_bitmap.set(instance_id);
+}
+
+/// 5. 路由查询 (保持不变)
+pub fn route(id: ptr.InstanceId) !Instance {
+    global_state.mutex.lock();
+    defer global_state.mutex.unlock();
+
     return global_state.instances[id] orelse errors.InstanceNotFound;
 }
 
-/// 4. 关闭实例
+/// 6. 关闭实例
 pub fn closeInstance(id: ptr.InstanceId) void {
     global_state.mutex.lock();
     defer global_state.mutex.unlock();
@@ -110,6 +115,7 @@ pub fn closeInstance(id: ptr.InstanceId) void {
     if (global_state.instances[id]) |env| {
         _ = lmj.cleanup(env);
         global_state.instances[id] = null;
-        global_state.used_bitmap.reset(id);
+        // 【变更 3】：关闭后，标记为 0 (锁定)
+        global_state.used_bitmap.unset(id);
     }
 }

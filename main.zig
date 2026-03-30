@@ -9,15 +9,29 @@ fn getTimestamp() i64 {
 }
 
 pub fn main() !void {
-    // 1. 定义 ID 变量 (必须在栈上或全局，不能在临时表达式中)
-    const id1: Opt.Ptr.InstanceId = 1;
-    const id2: Opt.Ptr.InstanceId = 2;
+    // 定义要注册的实例 ID 列表 (编译时常量)
+    const INSTANCE_IDS = [_]u8{ 1, 2, 3, 6, 7, 43, 22, 54, 32, 33, 44, 55, 66, 77, 88, 99 };
 
-    // 2. 传入地址
-    try Opt.Rot.openInstance(&id1, "./lmjcore_db/zig/aaa", 2048 * 2048);
-    try Opt.Rot.openInstance(&id2, "./lmjcore_db/zig/bbb", 2048 * 2048);
+    // 基础路径
+    const BASE_PATH = "./lmjcore_db/zig/";
+
+    // 数据库大小 (2MB)
+    const DB_SIZE = 2048 * 2048;
+
+    // 编译时循环，为每个 ID 生成打开代码
+    inline for (INSTANCE_IDS) |id| {
+        // 构建路径: BASE_PATH + "instance_{id}"
+        const path = BASE_PATH ++ "instance_" ++ .{id} ++ "";
+
+        // 调用注册函数
+        try Opt.Rot.openInstance(&id, path, DB_SIZE);
+    }
+
+    // --- 批量注册逻辑结束 ---
+
+    std.debug.print("所有实例注册完成。\n", .{});
+
     // 1. 初始化逻辑
-
     const ptr = try Opt.Obj.creat(null);
     try Opt.Obj.put(null, ptr, "name", "value: []const u8");
 
@@ -28,12 +42,12 @@ pub fn main() !void {
     std.debug.print("[MAIN] {d}ms - 数据: {s}, 长度: {d} 实例:{d}\n", .{ getTimestamp(), out, valueLen, ptr.instance_id });
 
     // 2. 线程管理
-    var threads: [10]std.Thread = undefined;
+    var threads: [40]std.Thread = undefined;
 
     // 启动线程
     for (&threads, 0..) |*t, i| {
         // 传递线程ID
-        t.* = try std.Thread.spawn(.{}, txt, .{i});
+        t.* = try std.Thread.spawn(.{}, testA, .{i});
     }
 
     // 3. 等待所有线程结束
@@ -45,7 +59,7 @@ pub fn main() !void {
 }
 
 // 修改函数签名：接受线程ID，返回 void
-fn txt(id: usize) void {
+fn testA(id: usize) void {
     std.debug.print("[THREAD {d}] {d}ms - 开始执行...\n", .{ id, getTimestamp() });
 
     // 使用一个代码块来包裹逻辑，以便使用 catch 捕获所有错误
