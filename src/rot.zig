@@ -6,7 +6,7 @@ const errors = @import("error.zig").errors;
 pub const Instance = ?*lmj.Env;
 
 fn ptrGenerator(ctx: ?*anyopaque, out: [*c]u8) callconv(.c) c_int {
-    const instance_id_ptr: *ptr.InstanceId = @ptrCast(ctx);
+    const instance_id_ptr: *const ptr.InstanceId = @ptrCast(@alignCast(ctx));
 
     std.crypto.random.bytes(out[ptr.RANDOM_ID_OFFSET..][0..ptr.RANDOM_ID_LEN]);
 
@@ -47,22 +47,22 @@ pub fn acquireFreeInstanceId() !ptr.InstanceId {
 }
 
 /// 2. 打开实例 (修正版)
-pub fn openInstance(instance_id: ptr.InstanceId, path: []const u8, map_size: usize) !void {
+pub fn openInstance(instance_id: *const ptr.InstanceId, path: []const u8, map_size: usize) !void {
     // --- 阶段一：预占位 ---
     global_state.mutex.lock();
 
-    if (global_state.instances[instance_id] != null) {
+    if (global_state.instances[instance_id.*] != null) {
         global_state.mutex.unlock();
         return errors.InstanceIdAlreadyUsed;
     }
 
-    if (global_state.used_bitmap.isSet(instance_id)) {
+    if (global_state.used_bitmap.isSet(instance_id.*)) {
         global_state.mutex.unlock();
         return errors.InstanceIdAlreadyUsed;
     }
 
     // 标记为“正在使用”
-    global_state.used_bitmap.set(instance_id);
+    global_state.used_bitmap.set(instance_id.*);
 
     // 释放锁，进行耗时操作
     global_state.mutex.unlock();
@@ -72,7 +72,7 @@ pub fn openInstance(instance_id: ptr.InstanceId, path: []const u8, map_size: usi
 
     // 直接使用 try。如果失败，函数直接返回错误，不会执行后续代码。
     // 不需要接收返回值 rc。
-    try lmj.init(path, map_size, .{ .nosubdir = true }, ptrGenerator, @ptrCast(@constCast(&instance_id)), &instance);
+    try lmj.init(path, map_size, .{ .nosubdir = true }, ptrGenerator, @ptrCast(@constCast(instance_id)), &instance);
 
     // --- 阶段三：提交结果 ---
     global_state.mutex.lock();
@@ -82,12 +82,12 @@ pub fn openInstance(instance_id: ptr.InstanceId, path: []const u8, map_size: usi
     // 我们不需要检查 rc，只需要检查 instance 指针是否有效（防御性编程）。
     if (instance == null) {
         // 理论上 try lmj.init 成功则 instance 不应为 null，除非 lmj.init 逻辑有漏洞
-        global_state.used_bitmap.unset(instance_id);
+        global_state.used_bitmap.unset(instance_id.*);
         return errors.InitFailed;
     }
 
     // 成功：写入指针
-    global_state.instances[instance_id] = instance;
+    global_state.instances[instance_id.*] = instance;
 }
 
 /// 3. 路由查询 (高性能)
